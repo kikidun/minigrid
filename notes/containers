@@ -61,3 +61,18 @@ When the container's processes started sleep, how did those new processes end up
 I assume these processes ended up in the C group because they were started by a process in the C group. 
 
 "Resource temporarily unavailable" is the right error here because currently there are 20 processes, and I do have permission to create more processes, but I am at the cap of processes that I can be running. I believe that there are 19 sleep processes because one of the processes the container is running is the shell.I think backing off is probably the right answer. 
+
+
+
+Final container script, run script with sudo :
+#! /bin/sh
+set -eu
+rootfs_path="/home/wheels/code/minigrid/contain/rootfs"
+
+mkdir -p /sys/fs/cgroup/minigrid
+
+echo 50M > /sys/fs/cgroup/minigrid/memory.max
+echo 0 > /sys/fs/cgroup/minigrid/memory.swap.max
+echo 20 > /sys/fs/cgroup/minigrid/pids.max
+echo $$ > /sys/fs/cgroup/minigrid/cgroup.procs 
+exec unshare --pid --fork --mount --uts --net --mount-proc="$rootfs_path/proc" chroot "$rootfs_path" /bin/sh
