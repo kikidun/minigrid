@@ -25,19 +25,20 @@ Logs, and metrics
 3. DATA MODEL
 Tables:
 Jobs
-ID, state, worker_id, lease_initiation_timestamp, last_progress_timestamp, error, list_of_worker_attempts
+ID, state, worker_id, lease_initiation_timestamp, last_progress_timestamp, error, attempt_count, attempt_id
 
 Workers
 ID, job_id, last_seen
 
 Attempts
-job_id, worker_id, status, error, last progressed?
+attempt_id, job_id, worker_id, status, error, last progressed?
 
 4. STATE MACHINE
 ![alt text](image.png)
 
 5. PROTOCOL
-claim - {"worker_id": id, "operation": claim, "job_id": job_id, "attempt": #} (increment attempt)
+claim request- {"worker_id": id, "operation": claim} (increment attempt)
+claim response- {"job_id": job_id, "attempt": #, "payload": payload} (increment attempt)
 heartbeat - worker reaches out to coordinator with {"worker_id": id, "status": status, "job_id": id, "attempt": #, "progress": progress}
 complete - worker reaches out to coordinator with {"worker_id": id, "job_id": job_id, "attempt": #, "result": result}
 fail - {"worker_id": id, "job_id": job_id, "attempt": #, "error": error}
@@ -47,18 +48,21 @@ drop - {"job_id": job_id, "operation": drop}
 failure, detected, what happens
 worker dies, no heartbeat for 45s, worker killed + attempts incremented + worker added to attempt list + job marked pending 
 job hangs, no progress for 60s, job dropped + attempts incremented + worker added to attempt list + job marked pending
-zombie worker, no progress for 60s, don't accept a result if the attempt count is higher than the incoming result
+zombie worker, job comes in completed with an incorrect attempt#, don't accept a result if the attempt count is different than the incoming result + kill worker?
 poison job, attempt count exceeded, job moved to DLQ
-coordinator restart, not sure how to detect, heartbeat grace period + recover jobs?
-db down, coordinator misses db heartbeat?, restart db?
-network partition, not even sure how this would happen, 
+coordinator restart, no detection just a defined startup process, heartbeat grace period + take stock of jobs
+db down, coordinator fails to read/write from db, create offline results file for replay later
+network partition, generally discovered by seeing a zombie worker, do zombie things
 sigterm, Recieved by python, graceful shutdown + mark job as failed/interrupted
 claimed but not started, job will be msrked as dead because no progress gets made after 60s, increment attempts + mark pending
 
 7. DECISIONS
-HTTP for transport seems easy, but there might be a better choice
+HTTP for transport seems easy. Easy to curl, log and debug.
+
+coordinator startup sets a 60 second grace period for worker liveness, and checks db to see what jobs are running or claimed
+
+Coordinator will write completed jobs to a file to be replayed into the database on reconnect
+Coordinator will retry writing as long as there's a file holding results
+It's okay to retry completed results because the DB will reject if the attempt is wrong
 
 8. OPEN QUESTIONS
-What to use for application transport?
-What does the coordinator do on startup?
-What does the coordinator do if the DB is down, where do I put results? 

@@ -33,7 +33,7 @@ transport?
 second pass:
 zombie detection via stale result
 reject any job that comes in with a different attempt number
-network partition idk if i want to do right now
+network partition idk if i want to do right now, actrually just zombie
 
 claim job should split into request and response
 claim request with worker_id, respond with job_id, attempt
