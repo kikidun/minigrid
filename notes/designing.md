@@ -30,4 +30,16 @@ add job to heartbeat
 think about drop
 transport?
 
+second pass:
+zombie detection via stale result
+reject any job that comes in with a different attempt number
+network partition idk if i want to do right now
 
+claim job should split into request and response
+claim request with worker_id, respond with job_id, attempt
+
+startup = grace period + claimed and running
+
+where does a result live if cant be committed? 
+who holds onto it and retries? coordinator?
+why is retried complete safe to apply twice?
