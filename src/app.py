@@ -51,12 +51,48 @@ def claim():
     except Exception:
         con.execute("ROLLBACK")
         raise
-    
+
     return jsonify({                    
         "job_id": row["id"],
         "attempt_number": row["attempt_number"],
         "params": json.loads(row["params"]),
     })
+
+@app.post("/heartbeat")
+def heartbeat():
+    #gonna take worker id, job id and attempt number
+    body = request.get_json(silent=True) or {}
+    worker_id = body.get("worker_id")
+    job_id = body.get("job_id")
+    attempt_number = body.get("attempt_number")
+    if not worker_id:
+        abort(400, description="worker_id required")
+    if not job_id:
+        abort(400, description="job_id required")
+    if not attempt_number:
+        abort(400, description="attempt_number required")
+
+    con = get_db()
+    now_ms = milliseconds = time.time_ns() // 1_000_000
+
+    try:
+        cursor = con.execute("""
+        UPDATE jobs
+        SET job_state = 'running',
+        lease_expiry = ?
+        WHERE id = ?
+            AND attempt_number = ?
+        AND worker_id = ?
+        AND job_state IN ('claimed', 'running')
+        """, (now_ms + 45_000, job_id, attempt_number, worker_id))
+
+        if cursor.rowcount == 0:                 
+            return "", 409
+        elif cursor.rowcount == 1:
+            return "", 204
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
 
 if __name__ == "__main__":
     app.run(debug=True)
