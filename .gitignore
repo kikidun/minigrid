@@ -4,4 +4,5 @@ db/sql-workspace.sql
 db/grid.db
 *.db-wal
 *.db-shm
-src/__pycache__/
+__pycache__/
+*.pyc
