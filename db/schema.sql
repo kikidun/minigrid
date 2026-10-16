@@ -1,6 +1,4 @@
----DROP TABLE jobs;
----DROP TABLE attempts;
-
+PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY,
     job_state TEXT NOT NULL DEFAULT 'pending' CHECK (job_state IN ('pending','claimed','running','complete','failed','dlq')),

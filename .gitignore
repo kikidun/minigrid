@@ -2,3 +2,5 @@ contain/
 labs/week1/work/
 db/sql-workspace.sql
 db/grid.db
+*.db-wal
+*.db-shm
