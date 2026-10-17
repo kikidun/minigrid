@@ -14,7 +14,6 @@ def get_db():
         g.db.execute("PRAGMA foreign_keys = ON")
     return g.db
 
-
 @app.teardown_appcontext
 def close_db(exc):
     db = g.pop("db", None)
@@ -94,7 +93,6 @@ def heartbeat():
         con.execute("ROLLBACK")
         raise
 
-
 @app.post("/complete")
 def complete():
     #takes job_id, worker_id, attempt_number, result
@@ -116,8 +114,6 @@ def complete():
         abort(400, description="result required")
 
     #atomic transaction
-    
-    
     con = get_db()
     now_ms = time.time_ns() // 1_000_000
     try:
@@ -155,11 +151,17 @@ def complete():
 
 @app.get("/health")
 def health():
+    #Attempt DB connection to determine API availability
+    try:
+        con = get_db()
+        con.execute("""SELECT 1;""").fetchone()
+    except sqlite3.Error:
+        return jsonify({"sweep_ok": False}), 503
+    #DB available, respond healthy with grace toggle
     if time.monotonic() - start_time > 60.0:
-        return "{'sweep_ok': true}", 200
+        return jsonify({"sweep_ok": True}), 200
     else:
-        return "{'sweep_ok': false}", 200
-
+        return jsonify({"sweep_ok": False}), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
