@@ -6,7 +6,7 @@ from flask import Flask, g, jsonify, request, abort
 DB_PATH = "../db/grid.db"
 app = Flask(__name__)
 LEASE_SECONDS = 300
-
+start_time = time.monotonic()
 def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(DB_PATH, isolation_level=None, timeout=5)
@@ -152,7 +152,14 @@ def complete():
     except Exception:
         con.execute("ROLLBACK")
         raise
-    
+
+@app.get("/health")
+def health():
+    if time.monotonic() - start_time > 60.0:
+        return "{'sweep_ok': true}", 200
+    else:
+        return "{'sweep_ok': false}", 200
+
 
 if __name__ == "__main__":
     app.run(debug=True)
