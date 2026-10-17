@@ -67,3 +67,4 @@ CREATE TABLE IF NOT EXISTS attempts (
     CHECK (outcome IN ('running','succeeded','failed','stalled','died'))
 )
 
+adding UNIQUE (job_id, attempt_number) to the attempts table, so job_id + attempt number basically works like a key to find the one row, also prevents duplicates

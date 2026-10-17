@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS attempts (
     outcome TEXT,
     error TEXT,
 
-    CHECK (outcome IN ('running','succeeded','failed','stalled','died'))
+    CHECK (outcome IN ('running','succeeded','failed','stalled','died')),
+    UNIQUE (job_id, attempt_number)
 );
 
 -- Workers only ever scan for claimable jobs;
