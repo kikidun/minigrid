@@ -32,30 +32,30 @@ def claim():
         abort(400, description="worker_id required")
 
     con = get_db()
-    now_ms = milliseconds = time.time_ns() // 1_000_000
+    now_ms = time.time_ns() // 1_000_000
     try:
         con.execute("BEGIN IMMEDIATE")
-        row = con.execute("""
+        cursor = con.execute("""
         UPDATE jobs SET job_state='claimed', worker_id=?, attempt_number=attempt_number+1, lease_initiated=?, lease_expiry=?
         WHERE id = (SELECT id FROM jobs WHERE job_state='pending' LIMIT 1)
         RETURNING id, attempt_number, params""",(worker_id, now_ms, now_ms + LEASE_SECONDS*1000)).fetchone()
 
-        if row is None:                 
+        if cursor is None:                 
             con.execute("ROLLBACK")
             return "", 204
 
         con.execute("""
         INSERT INTO attempts (job_id, worker_id, started_at, outcome, attempt_number) VALUES (?, ?, ?, ?, ?)""",
-        (row["id"], worker_id, now_ms, 'running', row["attempt_number"]))
+        (cursor["id"], worker_id, now_ms, 'running', cursor["attempt_number"]))
         con.execute("COMMIT")
     except Exception:
         con.execute("ROLLBACK")
         raise
 
     return jsonify({                    
-        "job_id": row["id"],
-        "attempt_number": row["attempt_number"],
-        "params": json.loads(row["params"]),
+        "job_id": cursor["id"],
+        "attempt_number": cursor["attempt_number"],
+        "params": json.loads(cursor["params"]),
     })
 
 @app.post("/heartbeat")
@@ -73,7 +73,7 @@ def heartbeat():
         abort(400, description="attempt_number required")
 
     con = get_db()
-    now_ms = milliseconds = time.time_ns() // 1_000_000
+    now_ms = time.time_ns() // 1_000_000
 
     try:
         cursor = con.execute("""
@@ -82,8 +82,8 @@ def heartbeat():
         lease_expiry = ?
         WHERE id = ?
             AND attempt_number = ?
-        AND worker_id = ?
-        AND job_state IN ('claimed', 'running')
+            AND worker_id = ?
+            AND job_state IN ('claimed', 'running')
         """, (now_ms + 45_000, job_id, attempt_number, worker_id))
 
         if cursor.rowcount == 0:                 
@@ -93,6 +93,66 @@ def heartbeat():
     except Exception:
         con.execute("ROLLBACK")
         raise
+
+
+@app.post("/complete")
+def complete():
+    #takes job_id, worker_id, attempt_number, result
+    #job table gets complete with result and finished_at
+    #attempt table gets outcome, and ended at
+    body = request.get_json(silent=True) or {}
+    job_id = body.get("job_id")
+    attempt_number = body.get("attempt_number")
+    worker_id = body.get("worker_id")
+    result = body.get("result")
+
+    if not worker_id:
+        abort(400, description="worker_id required")
+    if not job_id:
+        abort(400, description="job_id required")
+    if not attempt_number:
+        abort(400, description="attempt_number required")
+    if result is None:
+        abort(400, description="result required")
+
+    #atomic transaction
+    
+    
+    con = get_db()
+    now_ms = time.time_ns() // 1_000_000
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        #job table gets complete with result and finished_at
+        cursor = con.execute("""
+        UPDATE jobs
+        SET job_state = 'complete', finished_at = ?, result=?
+        WHERE id = ?
+            AND attempt_number = ?
+            AND worker_id = ?
+            AND job_state IN ('claimed', 'running')""",(now_ms, json.dumps(result), job_id, attempt_number, worker_id))
+
+        if cursor.rowcount == 0:                
+            con.execute("ROLLBACK")
+            return "", 409
+
+        #attempt table gets outcome, and ended at
+        cursor = con.execute("""
+        UPDATE attempts
+        SET outcome = 'succeeded', ended_at = ?
+        WHERE job_id = ? AND attempt_number = ? AND outcome = 'running'""",
+        (now_ms, job_id, attempt_number))
+
+        if cursor.rowcount == 0:
+            con.execute("ROLLBACK")                 
+            return "", 500            
+
+        con.execute("COMMIT")
+        return "", 204
+
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    
 
 if __name__ == "__main__":
     app.run(debug=True)

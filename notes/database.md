@@ -68,3 +68,6 @@ CREATE TABLE IF NOT EXISTS attempts (
 )
 
 adding UNIQUE (job_id, attempt_number) to the attempts table, so job_id + attempt number basically works like a key to find the one row, also prevents duplicates
+
+If you need data back like in claim, use RETURNING in the statement and .fetchone() in the execution
+If you just need to know whether it matched like with heartbeat and complete, use .rowcount
