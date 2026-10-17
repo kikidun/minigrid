@@ -1,17 +1,17 @@
 import json
 import time
 import sqlite3
+import config
 from flask import Flask, g, jsonify, request, abort
 
 DB_PATH = "../db/grid.db"
 app = Flask(__name__)
 LEASE_SECONDS = 300
 start_time = time.monotonic()
+
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH, isolation_level=None, timeout=5)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        g.db = config.connect()
     return g.db
 
 @app.teardown_appcontext

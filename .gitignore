@@ -6,3 +6,4 @@ db/grid.db
 *.db-shm
 __pycache__/
 *.pyc
+.venv/
