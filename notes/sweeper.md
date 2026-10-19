@@ -71,3 +71,27 @@ if now >= start_time + 60s
     return 200 and "sweep_ok": [true]
 else 
     return 200 and "sweep_ok": [false]
+
+A few iterations into the sweeper logic we have:
+while True:
+        try:
+            response = requests.get(config.API_URL + "/health", timeout=2)
+            if response.status_code == 200:
+                if response.json()["sweep_ok"]:
+                    print("Healthy, sweep ok!")
+                else:
+                    print("Healthy, no sweep!") 
+                time.sleep(10)
+            elif response.status_code == 503:
+                print("DB down!")
+                time.sleep(5)
+            else:
+                print(f"Unexpected status code {response.status_code} received!")
+                time.sleep(5)
+        except requests.RequestException:
+            print("Endpoint unreachable!")
+            time.sleep(5)
+
+for the sake of readability, I don;t want to write the DB actions 3 indents in
+I'll use the /health API to set a value and then logic off that value
+
