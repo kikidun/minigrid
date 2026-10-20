@@ -6,7 +6,7 @@ from flask import Flask, g, jsonify, request, abort
 
 DB_PATH = "../db/grid.db"
 app = Flask(__name__)
-LEASE_SECONDS = 300
+LEASE_SECONDS = 60
 start_time = time.monotonic()
 
 def get_db():
