@@ -17,10 +17,10 @@ def job_table_update(new_state, finished_at, error, job_id, now, attempt_number)
             lease_expiry = NULL, 
             last_progress = NULL,
             error = ?
-        WHERE id = ?
-            AND job_state IN ('claimed', 'running')
-            AND lease_expiry < ?
-            AND attempt_number = ?
+        WHERE id = ? 
+        AND ((job_state IN ('claimed', 'running') AND lease_expiry < ?) 
+            OR job_state = 'failed') 
+        AND attempt_number = ?
         """,(new_state, finished_at, error, job_id, now, attempt_number))
     return job_response
 
@@ -73,8 +73,8 @@ if __name__ == "__main__":
                     con.execute("BEGIN IMMEDIATE")
                     #1 job at a time, short transaction, and allows the "list" to keep updating
                     row = con.execute("""
-                        SELECT id AS job_id, attempt_number FROM jobs WHERE job_state IN ('claimed', 'running') 
-                        AND lease_expiry < ?
+                        SELECT id AS job_id, attempt_number, job_state, error FROM jobs WHERE (job_state IN ('claimed', 'running') 
+                        AND lease_expiry < ?) OR job_state = 'failed'
                         ORDER BY lease_expiry LIMIT 1
                     """,(now,)).fetchone()
                     if row is None:
@@ -86,10 +86,10 @@ if __name__ == "__main__":
                         if row["attempt_number"] >= 3:
                             print(f"job {row["job_id"]} reached attempt theshold, sending to DLQ")
                             new_state = 'dlq'
-                            error = 'max_attempts_exceeded'
+                            error = f"max_attempts_exceeded: {row['error'] or 'lease_expired'}"
                             finished_at = now
                         else:
-                            print(f"job {row["job_id"]} lease expired, returning to the pending pool")
+                            print(f"job {row["job_id"]} moving from {row["job_state"]} to the pending pool")
                             new_state = 'pending'
                             error = None
                             finished_at = None
@@ -101,6 +101,9 @@ if __name__ == "__main__":
                             finished = True
                         elif job_response.rowcount == 1:
                             print(f"job {row["job_id"]} sent to {new_state}")
+                            if row["job_state"] == 'failed':
+                                con.execute("""COMMIT""")
+                                continue
                             attempts_response = attempt_lease_expired_update(now, row["job_id"], row["attempt_number"])
                             if attempts_response.rowcount == 0:                 
                                 print(f"failed to update attempt outcome to {new_state} for job {row["job_id"]} attempt {row["attempt_number"]}")
