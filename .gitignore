@@ -7,3 +7,4 @@ db/grid.db
 __pycache__/
 *.pyc
 .venv/
+/src/worker-test.py
