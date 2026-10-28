@@ -8,8 +8,9 @@ Status:
 - [x] /health
 - [x] Sweep from running to pending
 - [x] Sweep from running to dlq
-- [ ] /fail
+- [x] /fail
 - [x] Basic Worker process
+- [ ] Logging
 - [ ] API Tests
 
 Architecture:
