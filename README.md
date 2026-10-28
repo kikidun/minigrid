@@ -33,11 +33,12 @@ job kills worker - DLQ after 3 attempts with recorded error
 coordinator restart - 60 second grace period for jobs to heartbeat
 db unreachable - /health returns a 503 and sweeper stands down
 
-To run:
-cd db
-./reset.sh
-cd ../src
-then in 3 terminals from the src directory:
-flask run
-python3 sweeper.py
-python3 worker.py
+To run from project root:
+
+1. cd db
+2. ./reset.sh
+3. cd ../src
+4. then in 3 terminals from the src directory:
+    1. flask run
+    2. python3 sweeper.py
+    3. python3 worker.py
