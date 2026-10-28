@@ -3,14 +3,15 @@ import config
 import requests 
 import time
 
-def sweep():
-    return
+#Sweeper is responsible for finding jobs with expired leases and moving them back to pending or into the DLQ
+#Runs as it's own process to not block the API
 
-def job_table_update(new_state, error, job_id, now, attempt_number):
+def job_table_update(new_state, finished_at, error, job_id, now, attempt_number):
+    #updates the job table if the attempt number matches whats currently running to prevent zombie updates
     job_response = con.execute("""
         UPDATE jobs
         SET job_state = ?, 
-            finished_at = NULL, 
+            finished_at = ?, 
             worker_id = NULL, 
             lease_initiated = NULL, 
             lease_expiry = NULL, 
@@ -20,7 +21,7 @@ def job_table_update(new_state, error, job_id, now, attempt_number):
             AND job_state IN ('claimed', 'running')
             AND lease_expiry < ?
             AND attempt_number = ?
-        """,(new_state, error, job_id, now, attempt_number))
+        """,(new_state, finished_at, error, job_id, now, attempt_number))
     return job_response
 
 def attempt_lease_expired_update(now, job_id, attempt_number):
@@ -31,7 +32,7 @@ def attempt_lease_expired_update(now, job_id, attempt_number):
             error = 'lease_expired',
             ended_at = ?
         WHERE job_id = ? 
-            AND attempt_number = ?
+            AND attempt_number = ? 
             AND outcome = 'running'
         """,(now, job_id, attempt_number))
     return attempts_response
@@ -40,6 +41,12 @@ if __name__ == "__main__":
     con = config.connect()
     while True:
         should_sweep = False
+        """
+        Primary loop
+        Checks the /health endpoint for availability and for grace period
+        On API startup, all jobs have 60 seconds to heartbeat before leases start expiring
+        """
+
         try:
             response = requests.get(config.API_URL + "/health", timeout=2)
             if response.status_code == 200:
@@ -58,9 +65,13 @@ if __name__ == "__main__":
         if should_sweep:
             finished = False
             while not finished:
+                #Inner loop to do the sweeping
                 now = time.time_ns() // 1_000_000
                 try:
+                    #Acquire write lock before checking for jobs to update and updating them
+                    #a worker heartbeat can't land between the SELECT and the UPDATEs
                     con.execute("BEGIN IMMEDIATE")
+                    #1 job at a time, short transaction, and allows the "list" to keep updating
                     row = con.execute("""
                         SELECT id AS job_id, attempt_number FROM jobs WHERE job_state IN ('claimed', 'running') 
                         AND lease_expiry < ?
@@ -71,15 +82,19 @@ if __name__ == "__main__":
                         finished = True
                         con.execute("""COMMIT""")
                     else:
+                        #/claim increments the attempt_number
                         if row["attempt_number"] >= 3:
                             print(f"job {row["job_id"]} reached attempt theshold, sending to DLQ")
                             new_state = 'dlq'
                             error = 'max_attempts_exceeded'
+                            finished_at = now
                         else:
                             print(f"job {row["job_id"]} lease expired, returning to the pending pool")
                             new_state = 'pending'
                             error = None
-                        job_response = job_table_update(new_state, error, row["job_id"], now, row["attempt_number"])
+                            finished_at = None
+                        #run the job table update and the attempt table update
+                        job_response = job_table_update(new_state, finished_at, error, row["job_id"], now, row["attempt_number"])
                         if job_response.rowcount == 0:                 
                             print(f"failed to update job_status to {new_state} for job {row["job_id"]}")
                             con.execute("""ROLLBACK""")

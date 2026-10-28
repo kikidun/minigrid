@@ -95,3 +95,9 @@ while True:
 for the sake of readability, I don;t want to write the DB actions 3 indents in
 I'll use the /health API to set a value and then logic off that value
 
+
+The sweeper test:
+claim a job with curl
+do a heartbeat
+wait out the lease
+check the result
