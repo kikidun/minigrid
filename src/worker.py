@@ -163,10 +163,16 @@ if __name__ == "__main__":
             #no job? sleep with jitter
             elif response.status_code == 204:
                 attempt = 0
-                jitter = random.uniform(0, 1)
-                logging.info("no claimable jobs, sleeping for %s seconds", 5 + jitter)
+                sleep_time = 5 + random.uniform(0, 1)
+                logging.info("sleeping %ss to try again", sleep_time)
                 time.sleep(5 + jitter)
                 continue
+            elif response.status_code >= 500:
+                logging.info("claim call returned %s", response.status_code)
+                sleep_time = 5 + random.uniform(0, 1)
+                logging.info("sleeping %ss to try again", sleep_time)
+                time.sleep(5 + jitter)
+
         #connection error? backoff
         except requests.RequestException:
             logging.info("Endpoint unreachable!")
