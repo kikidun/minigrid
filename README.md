@@ -9,7 +9,7 @@ Status:
 - [x] Sweep from running to pending
 - [x] Sweep from running to dlq
 - [ ] /fail
-- [ ] Basic Worker process
+- [x] Basic Worker process
 - [ ] API Tests
 
 Architecture:
