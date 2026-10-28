@@ -6,24 +6,17 @@ import json
 import random
 import socket
 from uuid import uuid4
+from payload import run_var, JobCancelled
 
 HEARTBEAT_INTERVAL = 10
 url = "http://127.0.0.1:5000"
 claim_url = url + "/claim"
 heartbeat_url = url + "/heartbeat"
 complete_url = url + "/complete"
-job_iterations = 50
+fail_url = url + '/fail'
 hostname = socket.gethostname()
 worker_id = hostname + '-' + uuid4().hex[:6]
-result = {
-      "portfolio_id": 1,
-      "confidence": 0.99,
-      "n_sims": 10000,
-      "seed": 42,
-      "var": 184523.17,
-      "expected_shortfall": 231907.42,
-      "portfolio_value": 10000000.0
-    }
+
 
 def claim_job():
     payload = json.dumps({
@@ -65,6 +58,20 @@ def complete_job(worker_id, job_id, attempt_number, result):
     logging.debug(response.text)
     return response
 
+def fail_job(worker_id, job_id, attempt_number, error):
+    payload = json.dumps({
+        "worker_id": worker_id,
+        "job_id": job_id,
+        "attempt_number": attempt_number,
+        "error": error
+    })
+    headers = {
+      'Content-Type': 'application/json'
+    }
+    response = requests.request("POST", fail_url, headers=headers, data=payload, timeout=5)
+    logging.debug(response.text)
+    return response
+
 def heartbeat_function(worker_id, job_done, lease_lost, job):
     logging.info("Heartbeat thread for job %s: starting", job["job_id"])
     while not job_done.wait(HEARTBEAT_INTERVAL):
@@ -89,6 +96,11 @@ def backoff_with_jitter(attempt, base_delay=1, cap=32):
     
     return jitter_delay
 
+def check_lease(fraction):
+    logging.info("progress %.0f%%", fraction * 100)
+    if lease_lost.is_set():
+        logging.info("lease lost at %.0f%%, cancelling", fraction * 100)
+        raise JobCancelled()
 if __name__ == "__main__":
     format = "%(asctime)s: %(message)s"
     logging.basicConfig(format=format, level=logging.INFO,
@@ -98,6 +110,7 @@ if __name__ == "__main__":
     attempt = 0
     while True:
         #call /claim
+        error = None
         try:
             response = claim_job()
             if response.status_code == 200:
@@ -116,62 +129,98 @@ if __name__ == "__main__":
                 heartbeat.start()
 
                 #job loop 
-                for i in range(1, job_iterations + 1):
-                    if lease_lost.is_set():
-                        logging.info("lease_lost for job %s, dropping job", job["job_id"])
-                        break
-                    logging.info("worker progress on job %s: %s%% complete", job["job_id"], i*2)
-                    time.sleep(1)
+                try:
+                    result = run_var(job["params"], progress=check_lease, chunk_size=max(1, job["params"]["n_sims"] // 20))
+                except JobCancelled:
+                    logging.info("lease_lost for job %s, dropping job", job["job_id"])
+                except Exception as e:
+                    error = f"{type(e).__name__}: {e}"
+                    logging.exception("job %s failed", job["job_id"])
+
                 job_done.set()
                 heartbeat.join()
+
                 #post-job
                 #check lease_lost
                 if lease_lost.is_set():
                     logging.info("lease_lost for job %s, dropping job", job["job_id"])
                     continue
-                logging.info("job %s complete", job["job_id"])
+                
 
-                #hit the /complete endpoint
-                for try_num in range(5):
-                    try:
-                        complete = complete_job(worker_id, job["job_id"], job["attempt_number"], result)
-                    except requests.RequestException as e:
-                        logging.info("Completion exception %s", e)
-                        sleep_time = 5 + (try_num * 3)
-                        logging.info("sleeping %ss to try again", sleep_time)
-                        time.sleep(sleep_time)
-                        continue
-                    if complete.status_code == 204: 
-                        logging.info("completion call returned %s", complete.status_code)
-                        break
-                    elif complete.status_code == 409:
-                        logging.info("completion call returned %s", complete.status_code)
-                        logging.info("worker is not owner of job %s tossing", job["job_id"])
-                        break
-                    elif complete.status_code >= 500:
-                        logging.info("completion call returned %s", complete.status_code)
-                        sleep_time = 5 + (try_num * 3)
-                        logging.info("sleeping %ss to try again", sleep_time)
-                        time.sleep(sleep_time)
+                #if job raised an error
+                if error is not None:
+                    #hit the /fail endpoint
+                    logging.info("job %s failed", job["job_id"])
+                    for try_num in range(5):
+                        try:
+                            fail = fail_job(worker_id, job["job_id"], job["attempt_number"], error)
+                        except requests.RequestException as e:
+                            logging.info("Failure exception %s", e)
+                            sleep_time = 5 + (try_num * 3)
+                            logging.info("sleeping %ss to try again", sleep_time)
+                            time.sleep(sleep_time)
+                            continue
+                        if fail.status_code == 204: 
+                            logging.info("failure call returned %s", fail.status_code)
+                            break
+                        elif fail.status_code == 409:
+                            logging.info("failure call returned %s", fail.status_code)
+                            logging.info("worker is not owner of job %s tossing", job["job_id"])
+                            break
+                        elif fail.status_code >= 500:
+                            logging.info("failure call returned %s", fail.status_code)
+                            sleep_time = 5 + (try_num * 3)
+                            logging.info("sleeping %ss to try again", sleep_time)
+                            time.sleep(sleep_time)
+                        else:
+                            logging.info("failure call returned status_code %s", fail.status_code)
+                            logging.info("failure call returned response %s", fail.text)
+                            break
                     else:
-                        logging.info("completion call returned status_code %s", complete.status_code)
-                        logging.info("completion call returned response %s", complete.text)
-                        break
+                        logging.error("gave up failing job %s", job["job_id"])
                 else:
-                    logging.error("gave up completing job %s", job["job_id"])
+                    #hit the /complete endpoint
+                    logging.info("job %s complete", job["job_id"])
+                    for try_num in range(5):
+                        try:
+                            complete = complete_job(worker_id, job["job_id"], job["attempt_number"], result)
+                        except requests.RequestException as e:
+                            logging.info("Completion exception %s", e)
+                            sleep_time = 5 + (try_num * 3)
+                            logging.info("sleeping %ss to try again", sleep_time)
+                            time.sleep(sleep_time)
+                            continue
+                        if complete.status_code == 204: 
+                            logging.info("completion call returned %s", complete.status_code)
+                            break
+                        elif complete.status_code == 409:
+                            logging.info("completion call returned %s", complete.status_code)
+                            logging.info("worker is not owner of job %s tossing", job["job_id"])
+                            break
+                        elif complete.status_code >= 500:
+                            logging.info("completion call returned %s", complete.status_code)
+                            sleep_time = 5 + (try_num * 3)
+                            logging.info("sleeping %ss to try again", sleep_time)
+                            time.sleep(sleep_time)
+                        else:
+                            logging.info("completion call returned status_code %s", complete.status_code)
+                            logging.info("completion call returned response %s", complete.text)
+                            break
+                    else:
+                        logging.error("gave up completing job %s", job["job_id"])
 
             #no job? sleep with jitter
             elif response.status_code == 204:
                 attempt = 0
                 sleep_time = 5 + random.uniform(0, 1)
-                logging.info("sleeping %ss to try again", sleep_time)
-                time.sleep(5 + jitter)
+                logging.info("no claimable jobs, sleeping for %s seconds", sleep_time)
+                time.sleep(sleep_time)
                 continue
             elif response.status_code >= 500:
                 logging.info("claim call returned %s", response.status_code)
                 sleep_time = 5 + random.uniform(0, 1)
                 logging.info("sleeping %ss to try again", sleep_time)
-                time.sleep(5 + jitter)
+                time.sleep(sleep_time)
 
         #connection error? backoff
         except requests.RequestException:
