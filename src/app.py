@@ -4,7 +4,6 @@ import sqlite3
 import config
 from flask import Flask, g, jsonify, request, abort
 
-DB_PATH = "../db/grid.db"
 app = Flask(__name__)
 LEASE_SECONDS = 60
 start_time = time.monotonic()
@@ -36,7 +35,7 @@ def claim():
         con.execute("BEGIN IMMEDIATE")
         cursor = con.execute("""
         UPDATE jobs SET job_state='claimed', worker_id=?, attempt_number=attempt_number+1, lease_initiated=?, lease_expiry=?
-        WHERE id = (SELECT id FROM jobs WHERE job_state='pending' LIMIT 1)
+        WHERE id = (SELECT id FROM jobs WHERE job_state='pending' ORDER BY created_at LIMIT 1)
         RETURNING id, attempt_number, params""",(worker_id, now_ms, now_ms + LEASE_SECONDS*1000)).fetchone()
 
         if cursor is None:                 
@@ -48,7 +47,8 @@ def claim():
         (cursor["id"], worker_id, now_ms, 'running', cursor["attempt_number"]))
         con.execute("COMMIT")
     except Exception:
-        con.execute("ROLLBACK")
+        if con.in_transaction:
+            con.execute("ROLLBACK")
         raise
 
     return jsonify({                    
@@ -90,7 +90,8 @@ def heartbeat():
         elif cursor.rowcount == 1:
             return "", 204
     except Exception:
-        con.execute("ROLLBACK")
+        if con.in_transaction:
+            con.execute("ROLLBACK")
         raise
 
 @app.post("/complete")
@@ -146,7 +147,65 @@ def complete():
         return "", 204
 
     except Exception:
-        con.execute("ROLLBACK")
+        if con.in_transaction:
+            con.execute("ROLLBACK")
+        raise
+
+@app.post("/fail")
+def fail():
+    #takes job_id, worker_id, attempt_number, error
+    #job table gets set to failed with error and finished_at
+    #attempt table gets outcome, and ended at
+    body = request.get_json(silent=True) or {}
+    job_id = body.get("job_id")
+    attempt_number = body.get("attempt_number")
+    worker_id = body.get("worker_id")
+    error = body.get("error")
+
+    if not worker_id:
+        abort(400, description="worker_id required")
+    if not job_id:
+        abort(400, description="job_id required")
+    if not attempt_number:
+        abort(400, description="attempt_number required")
+    if not error:
+        abort(400, description="error required")
+
+    #atomic transaction
+    con = get_db()
+    now_ms = time.time_ns() // 1_000_000
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        #job table gets complete with failed, finished_at and error
+        cursor = con.execute("""
+        UPDATE jobs
+        SET job_state = 'failed', finished_at = ?, error=?
+        WHERE id = ?
+            AND attempt_number = ?
+            AND worker_id = ?
+            AND job_state IN ('claimed', 'running')""",(now_ms, error, job_id, attempt_number, worker_id))
+
+        if cursor.rowcount == 0:                
+            con.execute("ROLLBACK")
+            return "", 409
+
+        #attempt table gets outcome, and ended at
+        cursor = con.execute("""
+        UPDATE attempts
+        SET outcome = 'failed', ended_at = ?, error = ?
+        WHERE job_id = ? AND attempt_number = ? AND outcome = 'running'""",
+        (now_ms, error, job_id, attempt_number))
+
+        if cursor.rowcount == 0:
+            con.execute("ROLLBACK")                 
+            return "", 500            
+
+        con.execute("COMMIT")
+        return "", 204
+
+    except Exception:
+        if con.in_transaction:
+            con.execute("ROLLBACK")
         raise
 
 @app.get("/health")
