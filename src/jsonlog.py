@@ -20,6 +20,10 @@ class JsonFormatter(logging.Formatter):
 
         if self.worker_id is not None:
             format_dict["worker_id"] = self.worker_id
+        else:
+            worker_id = getattr(record, "worker_id", None)
+            if worker_id is not None:
+                format_dict["worker_id"] = worker_id
 
         if getattr(record, "job_id", None) is not None:
             format_dict["job_id"] = record.job_id

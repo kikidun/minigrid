@@ -2,9 +2,12 @@ import json
 import time
 import sqlite3
 import config
+import logging
+import jsonlog
 from flask import Flask, g, jsonify, request, abort
 
 app = Flask(__name__)
+jsonlog.setup("coordinator")
 LEASE_SECONDS = 60
 start_time = time.monotonic()
 
@@ -46,6 +49,7 @@ def claim():
         INSERT INTO attempts (job_id, worker_id, started_at, outcome, attempt_number) VALUES (?, ?, ?, ?, ?)""",
         (cursor["id"], worker_id, now_ms, 'running', cursor["attempt_number"]))
         con.execute("COMMIT")
+        logging.info("job claimed", extra={"worker_id": worker_id, "job_id": cursor["id"], "attempt_number": cursor["attempt_number"]})
     except Exception:
         if con.in_transaction:
             con.execute("ROLLBACK")
@@ -85,7 +89,8 @@ def heartbeat():
             AND job_state IN ('claimed', 'running')
         """, (now_ms + 45_000, job_id, attempt_number, worker_id))
 
-        if cursor.rowcount == 0:                 
+        if cursor.rowcount == 0:
+            logging.warning("fenced: stale attempt", extra={"worker_id": worker_id, "job_id": job_id, "attempt_number": attempt_number})                 
             return "", 409
         elif cursor.rowcount == 1:
             return "", 204
@@ -130,6 +135,7 @@ def complete():
 
         if cursor.rowcount == 0:                
             con.execute("ROLLBACK")
+            logging.warning("fenced: stale attempt", extra={"worker_id": worker_id, "job_id": job_id, "attempt_number": attempt_number})
             return "", 409
 
         #attempt table gets outcome, and ended at
@@ -140,10 +146,12 @@ def complete():
         (now_ms, job_id, attempt_number))
 
         if cursor.rowcount == 0:
-            con.execute("ROLLBACK")                 
+            con.execute("ROLLBACK")
+            logging.error("jobs and attempts disagree", extra={"worker_id": worker_id, "job_id": job_id, "attempt_number": attempt_number})                 
             return "", 500            
 
         con.execute("COMMIT")
+        logging.info("job complete", extra={"worker_id": worker_id, "job_id": job_id, "attempt_number": attempt_number})
         return "", 204
 
     except Exception:
@@ -187,6 +195,7 @@ def fail():
 
         if cursor.rowcount == 0:                
             con.execute("ROLLBACK")
+            logging.warning("fenced: stale attempt", extra={"worker_id": worker_id, "job_id": job_id, "attempt_number": attempt_number})
             return "", 409
 
         #attempt table gets outcome, and ended at
@@ -197,10 +206,12 @@ def fail():
         (now_ms, error, job_id, attempt_number))
 
         if cursor.rowcount == 0:
-            con.execute("ROLLBACK")                 
+            con.execute("ROLLBACK")  
+            logging.error("jobs and attempts disagree", extra={"worker_id": worker_id, "job_id": job_id, "attempt_number": attempt_number})                  
             return "", 500            
 
         con.execute("COMMIT")
+        logging.info("job failed", extra={"worker_id": worker_id, "job_id": job_id, "attempt_number": attempt_number})
         return "", 204
 
     except Exception:
