@@ -1,0 +1,13 @@
+.git
+docs/
+notes/
+labs/
+.venv/
+contain/
+db/sql-workspace.sql
+db/grid.db*
+*.db-wal
+*.db-shm
+__pycache__/
+*.pyc
+/src/worker-test.py

@@ -1,0 +1,63 @@
+services:
+  db-init:
+    #build the image from the dockerfile
+    build: .
+    image: minigrid
+    command: ["python", "init_db.py"]
+    environment:
+      DB_PATH: /data/grid.db
+    volumes:
+     - griddata:/data
+     
+  coordinator:
+    #build the image from the dockerfile
+    build: .
+    image: minigrid
+    command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "app:app"]
+    environment:
+      DB_PATH: /data/grid.db
+    depends_on:
+      db-init:
+        condition: "service_completed_successfully"
+    volumes:
+     - griddata:/data
+    ports: 
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  sweeper:
+    #build the image from the dockerfile
+    build: .
+    image: minigrid
+    command: ["python", "sweeper.py"]
+    environment:
+      DB_PATH: /data/grid.db
+      API_URL: "http://coordinator:5000"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      coordinator:
+        condition: service_healthy
+    volumes:
+    - griddata:/data
+    restart: unless-stopped
+
+  worker:
+    #build the image from the dockerfile
+    build: .
+    image: minigrid
+    command: ["python", "worker.py"]
+    environment:
+      API_URL: "http://coordinator:5000"
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  griddata:
