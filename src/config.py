@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR.parent / "db" / "grid.db"
+DB_PATH = os.environ.get("DB_PATH", BASE_DIR.parent / "db" / "grid.db")
 API_URL = os.environ.get("API_URL", "http://127.0.0.1:5000")
 
 def connect():

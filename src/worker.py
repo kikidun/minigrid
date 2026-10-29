@@ -6,11 +6,12 @@ import json
 import random
 import socket
 import jsonlog
+import config
 from uuid import uuid4
 from payload import run_var, JobCancelled
 
 HEARTBEAT_INTERVAL = 10
-url = "http://127.0.0.1:5000"
+url = config.API_URL
 claim_url = url + "/claim"
 heartbeat_url = url + "/heartbeat"
 complete_url = url + "/complete"
