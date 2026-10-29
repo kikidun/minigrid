@@ -11,7 +11,7 @@ Status:
 - [x] /fail
 - [x] Basic Worker process
 - [x] Logging
-- [ ] Containerization
+- [x] Containerization
 
 Architecture:
 DB - SQLite db containing jobs and attempts
@@ -36,10 +36,10 @@ db unreachable - /health returns a 503 and sweeper stands down
 
 To run from project root:
 
-1. cd db
-2. ./reset.sh
-3. cd ../src
-4. then in 3 terminals from the src directory:
-    1. flask run
-    2. python3 sweeper.py
-    3. python3 worker.py
+1. docker build -t minigrid .
+2. docker compose up --scale worker=3
+3. docker compose down
+
+
+To reset the db:
+1. docker compose down -v 
