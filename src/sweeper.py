@@ -2,6 +2,8 @@ import sqlite3
 import config
 import requests 
 import time
+import logging
+import jsonlog
 
 #Sweeper is responsible for finding jobs with expired leases and moving them back to pending or into the DLQ
 #Runs as it's own process to not block the API
@@ -38,6 +40,7 @@ def attempt_lease_expired_update(now, job_id, attempt_number):
     return attempts_response
 
 if __name__ == "__main__":
+    jsonlog.setup("sweeper")
     con = config.connect()
     while True:
         should_sweep = False
@@ -51,16 +54,16 @@ if __name__ == "__main__":
             response = requests.get(config.API_URL + "/health", timeout=2)
             if response.status_code == 200:
                 if response.json()["sweep_ok"]:
-                    print("Healthy, sweep ok!")
+                    logging.debug("Healthy, sweep ok!")
                     should_sweep = True
                 else:
-                    print("Healthy, no sweep!") 
+                    logging.debug("Healthy, no sweep!") 
             elif response.status_code == 503:
-                print("DB down!")
+                logging.warning("DB down!")
             else:
-                print(f"Unexpected status code {response.status_code} received!")
+                logging.warning(f"Unexpected status code {response.status_code} received!")
         except requests.RequestException:
-            print("Endpoint unreachable!")
+            logging.warning("Endpoint unreachable!")
 
         if should_sweep:
             finished = False
@@ -78,46 +81,47 @@ if __name__ == "__main__":
                         ORDER BY lease_expiry LIMIT 1
                     """,(now,)).fetchone()
                     if row is None:
-                        print("Nothing to sweep")
+                        logging.debug("Nothing to sweep")
                         finished = True
                         con.execute("""COMMIT""")
                     else:
+                        context = {"job_id": row["job_id"], "attempt_number": row["attempt_number"]}
                         #/claim increments the attempt_number
                         if row["attempt_number"] >= 3:
-                            print(f"job {row["job_id"]} reached attempt theshold, sending to DLQ")
+                            logging.warning(f"job {row["job_id"]} reached attempt threshold, sending to DLQ", extra=context)
                             new_state = 'dlq'
                             error = f"max_attempts_exceeded: {row['error'] or 'lease_expired'}"
                             finished_at = now
                         else:
-                            print(f"job {row["job_id"]} moving from {row["job_state"]} to the pending pool")
+                            logging.info(f"job {row["job_id"]} moving from {row["job_state"]} to the pending pool", extra=context)
                             new_state = 'pending'
                             error = None
                             finished_at = None
                         #run the job table update and the attempt table update
                         job_response = job_table_update(new_state, finished_at, error, row["job_id"], now, row["attempt_number"])
                         if job_response.rowcount == 0:                 
-                            print(f"failed to update job_status to {new_state} for job {row["job_id"]}")
+                            logging.warning(f"failed to update job_status to {new_state} for job {row["job_id"]}", extra=context)
                             con.execute("""ROLLBACK""")
                             finished = True
                         elif job_response.rowcount == 1:
-                            print(f"job {row["job_id"]} sent to {new_state}")
+                            logging.info(f"job {row["job_id"]} sent to {new_state}", extra=context)
                             if row["job_state"] == 'failed':
                                 con.execute("""COMMIT""")
                                 continue
                             attempts_response = attempt_lease_expired_update(now, row["job_id"], row["attempt_number"])
                             if attempts_response.rowcount == 0:                 
-                                print(f"failed to update attempt outcome to {new_state} for job {row["job_id"]} attempt {row["attempt_number"]}")
+                                logging.warning(f"failed to update attempt outcome to {new_state} for job {row["job_id"]} attempt {row["attempt_number"]}", extra=context)
                                 con.execute("""ROLLBACK""")
                                 finished = True
                             elif attempts_response.rowcount == 1:
-                                print(f"job {row["job_id"]} attempt {row["attempt_number"]} marked expired")
+                                logging.info(f"job {row["job_id"]} attempt {row["attempt_number"]} marked expired", extra=context)
                                 con.execute("""COMMIT""")
 
-                except sqlite3.Error as e:
+                except sqlite3.Error:
                     if con.in_transaction:
                         con.execute("""ROLLBACK""")
                     finished = True
-                    print(f"sweep failed, error message: {e}")
+                    logging.exception("sweep failed")
             time.sleep(10)
         else:
             time.sleep(10)
