@@ -1,3 +1,8 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 services:
   worker:
     #build the image from the dockerfile
@@ -10,3 +15,4 @@ services:
     restart: unless-stopped
     deploy: 
       replicas: 2
+    logging: *default-logging
