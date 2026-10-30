@@ -98,3 +98,19 @@
         files: [compose.worker.yaml]
         build: "{{ 'always' if repo is changed else 'policy' }}"
         state: present  
+
+- name: Phase 4 build ELK
+  hosts: elk
+  become: true
+  tasks: 
+    - name: configure ES vm.max_map_count
+      ansible.posix.sysctl:
+        name: vm.max_map_count
+        value: '262144'
+        state: present
+    - name: docker compose for ELK
+      community.docker.docker_compose_v2:
+        project_src: /opt/elk
+        files: [compose.elk.yaml]
+        build: "{{ 'always' if repo is changed else 'policy' }}"
+        state: present 

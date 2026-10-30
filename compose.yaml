@@ -20,7 +20,7 @@ services:
     #build the image from the dockerfile
     build: .
     image: minigrid
-    command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--worker-class", "gthread", "--threads", "4", "app:app",]
+    command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--worker-class", "gthread", "--threads", "4", "app:app"]
     environment:
       DB_PATH: /data/grid.db
     depends_on:
