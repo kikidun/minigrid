@@ -1,20 +1,17 @@
 ---
-- name: Install Docker on Ubuntu using official Docker repo
+- name: Phase 0 Install Docker on Ubuntu using official Docker repo
   hosts: all
   become: true
-  remote_user: kiki
 
   tasks:
     - name: Update apt cache
       ansible.builtin.apt:
         update_cache: yes
+        cache_valid_time: 3600
 
     - name: Ensure dependencies are installed
       ansible.builtin.package:
         name:
-          - bc
-          - curl
-          - expect
           - git
           - ca-certificates
         state: present
@@ -33,13 +30,9 @@
 
     - name: Add Docker repository to Apt sources
       ansible.builtin.apt_repository:
-        repo: "deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
         filename: docker
-
-    - name: Update apt cache after adding Docker repository
-      ansible.builtin.apt:
-        update_cache: yes
 
     - name: Install Docker and Docker Compose
       ansible.builtin.package:
@@ -57,8 +50,51 @@
         state: started
         enabled: yes
 
-    - name: Add ubuntu user to docker group
+    - name: Add user to docker group
       ansible.builtin.user:
-        name: ubuntu
+        name: kiki
         groups: docker
         append: yes
+
+- name: Phase 1 pull code
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Git checkout
+      ansible.builtin.git:
+        repo: 'https://github.com/kikidun/minigrid'
+        dest: /opt/minigrid
+        version: "{{ grid_version | default('main') }}"
+      register: repo
+
+- name: Phase 2 configure workers
+  hosts: workers
+  become: true
+  tasks:
+    - name: populate .env file for workers
+      ansible.builtin.template:
+        src: worker.env.j2
+        dest: /opt/minigrid/.env
+        mode: '0644'
+
+- name: Phase 3a build and start coordinator 
+  hosts: coordinator
+  become: true
+  tasks:
+    - name: docker compose for coordinator
+      community.docker.docker_compose_v2:
+        project_src: /opt/minigrid
+        build: "{{ 'always' if repo is changed else 'policy' }}"
+        state: present
+
+- name: Phase 3b build and start workers 
+  hosts: workers
+  become: true
+  tasks: 
+    - name: docker compose for workers
+      community.docker.docker_compose_v2:
+        project_src: /opt/minigrid
+        files: [compose.worker.yaml]
+        build: "{{ 'always' if repo is changed else 'policy' }}"
+        state: present  

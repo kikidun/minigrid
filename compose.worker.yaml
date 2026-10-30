@@ -5,7 +5,8 @@ services:
     image: minigrid
     command: ["python", "worker.py"]
     environment:
-      API_URL: "http://172.16.20.160:5000"
+      API_URL: ${COORDINATOR_URL:?COORDINATOR_URL is not set}
+      NODE_NAME: ${NODE_NAME:?NODE_NAME is not set}
     restart: unless-stopped
     deploy: 
       replicas: 2

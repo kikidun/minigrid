@@ -9,3 +9,4 @@ __pycache__/
 .venv/
 /src/worker-test.py
 ansible/inventory.ini
+.env
