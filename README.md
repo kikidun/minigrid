@@ -12,6 +12,13 @@ Status:
 - [x] Basic Worker process
 - [x] Logging
 - [x] Containerization
+- [x] Ansible for deployment
+- [ ] ELK stack setup
+- [ ] Filebeat per VM
+- [ ] Logstash pipeline
+- [ ] Dashboards
+- [ ] Full job trace
+- [ ] ES internals refresh
 
 Architecture:
 DB - SQLite db containing jobs and attempts
@@ -43,3 +50,8 @@ To run from project root:
 
 To reset the db:
 1. docker compose down -v 
+
+Known issues:
+- [ ] SIGTERM for workers
+- [ ] port 5000 lockdown
+
