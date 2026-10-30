@@ -1,0 +1,11 @@
+services:
+  worker:
+    #build the image from the dockerfile
+    build: .
+    image: minigrid
+    command: ["python", "worker.py"]
+    environment:
+      API_URL: "http://172.16.20.160:5000"
+    restart: unless-stopped
+    deploy: 
+      replicas: 2

@@ -59,5 +59,6 @@ services:
       coordinator:
         condition: service_healthy
     restart: unless-stopped
+    profiles: ["local"]
 volumes:
   griddata:

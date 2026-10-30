@@ -17,7 +17,7 @@ heartbeat_url = url + "/heartbeat"
 complete_url = url + "/complete"
 fail_url = url + '/fail'
 hostname = socket.gethostname()
-worker_id = hostname + '-' + uuid4().hex[:6]
+worker_id = os.environ.get("NODE_NAME", hostname) + '-' + uuid4().hex[:6]
 
 
 def claim_job():
