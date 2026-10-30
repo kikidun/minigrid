@@ -7,6 +7,7 @@ import random
 import socket
 import jsonlog
 import config
+import os
 from uuid import uuid4
 from payload import run_var, JobCancelled
 
