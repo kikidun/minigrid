@@ -70,9 +70,6 @@ services:
     restart: unless-stopped
     logging: *default-logging
     profiles: ["local"]
-
-  beats:
-    build: .
     
 volumes:
   griddata:

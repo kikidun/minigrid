@@ -35,4 +35,3 @@ services:
     restart: unless-stopped
 volumes:
   es-data:
-  filebeat-data:

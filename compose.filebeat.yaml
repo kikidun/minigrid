@@ -7,10 +7,11 @@ x-logging: &default-logging
 services:
   filebeat:
     image: docker.elastic.co/beats/filebeat:9.5.5                          
-    command: ["filebeat", "-e"]      
+    command: ["filebeat", "-e"]
+    user: root    
     environment:
       ES_HOSTS: ${ES_HOSTS:?ES_HOSTS is not set} 
-      hostname: ${NODE_NAME}    
+    hostname: ${NODE_NAME}    
     volumes:
       - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
