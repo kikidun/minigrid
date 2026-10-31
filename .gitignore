@@ -10,3 +10,4 @@ __pycache__/
 /src/worker-test.py
 ansible/inventory.ini
 .env
+/filebeat/filebeat.local.yml

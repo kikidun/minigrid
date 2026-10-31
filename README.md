@@ -15,7 +15,6 @@ Status:
 - [x] Ansible for deployment
 - [ ] ELK stack setup
 - [ ] Filebeat per VM
-- [ ] Logstash pipeline
 - [ ] Dashboards
 - [ ] Full job trace
 - [ ] ES internals refresh
