@@ -13,8 +13,8 @@ Status:
 - [x] Logging
 - [x] Containerization
 - [x] Ansible for deployment
-- [ ] ELK stack setup
-- [ ] Filebeat per VM
+- [x] ELK stack setup
+- [x] Filebeat per VM
 - [ ] Dashboards
 - [ ] Full job trace
 - [ ] ES internals refresh
@@ -53,4 +53,5 @@ To reset the db:
 Known issues:
 - [ ] SIGTERM for workers
 - [ ] port 5000 lockdown
+- [x] Make sure your CPU supports x86-64-v2 instructions
 
