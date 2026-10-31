@@ -11,17 +11,16 @@ services:
       - xpack.security.enabled=false
       - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
       - cluster.name=elk-cluster
-      - bootstrap.memory_lock=true
     ports:
       - "9200:9200"
-      - "9300:9300"
     volumes:
       - es-data:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 10
+    restart: unless-stopped
     logging: *default-logging
   kibana:
     image: docker.elastic.co/kibana/kibana:9.5.5
@@ -33,5 +32,7 @@ services:
       elasticsearch:
         condition: service_healthy
     logging: *default-logging
+    restart: unless-stopped
 volumes:
   es-data:
+  filebeat-data:
