@@ -1,0 +1,130 @@
+---
+- name: Phase 0 Install Docker on Ubuntu using official Docker repo
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Ensure dependencies are installed
+      ansible.builtin.package:
+        name:
+          - git
+          - ca-certificates
+        state: present
+
+    - name: Create Docker GPG key directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download Docker's official GPG key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Add Docker repository to Apt sources
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+        filename: docker
+
+    - name: Install Docker and Docker Compose
+      ansible.builtin.package:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Ensure Docker service is enabled and started
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add user to docker group
+      ansible.builtin.user:
+        name: kiki
+        groups: docker
+        append: yes
+
+- name: Phase 1 pull code
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Git checkout
+      ansible.builtin.git:
+        repo: 'https://github.com/kikidun/minigrid'
+        dest: /opt/minigrid
+        version: "{{ grid_version | default('main') }}"
+      register: repo
+
+- name: Phase 2 configure workers
+  hosts: workers
+  become: true
+  tasks:
+    - name: populate .env file for workers
+      ansible.builtin.template:
+        src: worker.env.j2
+        dest: /opt/minigrid/.env
+        mode: '0644'
+
+- name: Phase 3a build and start coordinator 
+  hosts: coordinator
+  become: true
+  tasks:
+    - name: docker compose for coordinator
+      community.docker.docker_compose_v2:
+        project_src: /opt/minigrid
+        build: "{{ 'always' if repo is changed else 'policy' }}"
+        state: present
+
+- name: Phase 3b build and start workers 
+  hosts: workers
+  become: true
+  tasks: 
+    - name: docker compose for workers
+      community.docker.docker_compose_v2:
+        project_src: /opt/minigrid
+        files: [compose.worker.yaml]
+        build: "{{ 'always' if repo is changed else 'policy' }}"
+        state: present  
+
+- name: Phase 4 build ELK
+  hosts: elk
+  become: true
+  tasks: 
+    - name: configure ES vm.max_map_count
+      ansible.posix.sysctl:
+        name: vm.max_map_count
+        value: '262144'
+        state: present
+    - name: docker compose for ELK
+      community.docker.docker_compose_v2:
+        project_src: /opt/minigrid
+        files: [compose.elk.yaml]
+        build: "{{ 'always' if repo is changed else 'policy' }}"
+        state: present 
+
+- name: Phase 5 Filebeat on grid hosts
+  hosts: grid
+  become: true
+  tasks:
+    - name: docker compose for filebeat
+      community.docker.docker_compose_v2:
+        project_src: /opt/minigrid
+        project_name: minigrid-filebeat
+        files: [compose.filebeat.yaml]
+        state: present
+      environment:
+        ES_HOSTS: "http://{{ hostvars[groups['elk'][0]]['ansible_host'] }}:9200"
+        NODE_NAME: "{{ inventory_hostname }}"

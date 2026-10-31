@@ -1,0 +1,25 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:9.5.5                          
+    command: ["filebeat", "-e"]      
+    environment:
+      ES_HOSTS: ${ES_HOSTS:?ES_HOSTS is not set} 
+      hostname: ${NODE_NAME}    
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - filebeat-data:/usr/share/filebeat/data 
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  filebeat-data:

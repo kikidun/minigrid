@@ -1,0 +1,34 @@
+filebeat.inputs:
+  - type: filestream
+    id: docker-containers            
+    paths:
+      - /var/lib/docker/containers/*/*.log
+    parsers:                         
+      - container:                   # strip container encapsulation
+          stream: all                # keep stdout and stderr
+      - ndjson:                      # decode JSON line
+          target: grid               # as grid.level, grid.msg, grid.job_id...
+          add_error_key: true        
+
+processors:
+  - add_docker_metadata: ~           
+  - drop_event:                      
+      when:
+        not:
+          equals:
+            container.labels.com_docker_compose_project: minigrid
+  - timestamp:                       
+      field: grid.ts
+      layouts:
+        - '2006-01-02T15:04:05.000Z07:00'   
+      test:
+        - '2026-10-30T20:00:00.123+00:00'  
+      ignore_missing: true           # non-JSON lines have no grid.ts; skip them quietly
+
+
+output.elasticsearch:
+  hosts: ['${ES_HOSTS}']             # filled from an environment variable, so the same file works locally and on the VMs
+
+
+setup.template.settings:
+  index.number_of_replicas: 0        # the yellow-cluster fix; answer "why yellow" before adding it
